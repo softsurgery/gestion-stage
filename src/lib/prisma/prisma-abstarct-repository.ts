@@ -3,7 +3,7 @@ import {
   IOptionsObject,
   IQueryObject,
 } from "./interfaces/database-query-params";
-import { parseFilters, parseSort } from "./utils/query-params-transpiler";
+import { parseFilters, parseJoin, parseSelect, parseSort } from "./utils/query-params-transpiler";
 
 export class BaseRepository<T> {
   protected prisma: PrismaClient;
@@ -20,15 +20,22 @@ export class BaseRepository<T> {
       sort,
       limit = options.DEFAULT_LIMIT || "10",
       page = "1",
+      select,
+      join,
     } = queryObject;
 
     const where = parseFilters(filter, options);
     const orderBy = parseSort(sort);
     const take = parseInt(limit, 10);
     const skip = (parseInt(page, 10) - 1) * take;
+    const selectFields = parseSelect(select);
+    const includeRelations = parseJoin(join);
 
     const [data, total] = await Promise.all([
-      this.model.findMany({ where, orderBy, skip, take }),
+      this.model.findMany({
+        where, orderBy, skip, take, select: selectFields,
+        include: includeRelations,
+      }),
       this.model.count({ where }),
     ]);
 

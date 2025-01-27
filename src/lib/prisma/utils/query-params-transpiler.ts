@@ -8,65 +8,102 @@ export function parseFilters(
   options: IOptionsObject = {}
 ): object {
   if (!filter) return {};
-  const filters = filter.split(options.CONDITION_DELIMITER || ";");
+
   const where: ILooseObject = {};
+  let andConditions: ILooseObject[] = [];
+  let orConditions: ILooseObject[] = [];
 
-  filters.forEach((filterCondition) => {
-    const [field, operator, value] = filterCondition.split(
-      options.LOOKUP_DELIMITER || "||"
-    );
-
+  // Function to parse a single condition like 'field||$eq||value'
+  function parseCondition(condition: string): ILooseObject {
+    const [field, operator, value] = condition.split(options.LOOKUP_DELIMITER || "||");
     const parsedValue = parseValue(value, operator);
+
+    let conditionObj: ILooseObject = {};
 
     switch (operator) {
       case options.EXACT || "$eq":
-        where[field] = parsedValue;
+        conditionObj[field] = parsedValue;
         break;
       case options.NOT || "!":
-        where[field] = { not: parsedValue };
+        conditionObj[field] = { not: parsedValue };
         break;
       case options.CONTAINS || "$cont":
-        where[field] = { contains: parsedValue };
+        conditionObj[field] = { contains: parsedValue };
         break;
       case options.IS_NULL || "$isnull":
-        where[field] = { is: null };
+        conditionObj[field] = { is: null };
         break;
       case options.GT || "$gt":
-        where[field] = { gt: parsedValue };
+        conditionObj[field] = { gt: parsedValue };
         break;
       case options.GTE || "$gte":
-        where[field] = { gte: parsedValue };
+        conditionObj[field] = { gte: parsedValue };
         break;
       case options.LT || "$lt":
-        where[field] = { lt: parsedValue };
+        conditionObj[field] = { lt: parsedValue };
         break;
       case options.LTE || "$lte":
-        where[field] = { lte: parsedValue };
+        conditionObj[field] = { lte: parsedValue };
         break;
       case options.STARTS_WITH || "$starts":
-        where[field] = { startsWith: parsedValue };
+        conditionObj[field] = { startsWith: parsedValue };
         break;
       case options.ENDS_WITH || "$ends":
-        where[field] = { endsWith: parsedValue };
+        conditionObj[field] = { endsWith: parsedValue };
         break;
       case options.IN || "$in":
-        where[field] = { in: parsedValue.split(",") };
+        conditionObj[field] = { in: parsedValue };
         break;
       case options.BETWEEN || "$between":
         const [start, end] = parsedValue.split(",");
-        where[field] = { gte: start, lte: end };
-        break;
-      case options.OR || "$or":
-        where[field] = {
-          OR: parsedValue.split(",").map((v : any) => parseValue(v, operator)),
-        };
+        conditionObj[field] = { gte: start, lte: end };
         break;
       default:
-        where[field] = parsedValue;
+        conditionObj[field] = parsedValue;
+    }
+
+    return conditionObj;
+  }
+
+  // Split the filter into tokens based on semicolons, but handle parentheses first
+  const tokens = filter.split(";");
+
+  let currentGroup: string[] = [];
+  let insideParentheses = false;
+  let tempGroup: string[] = [];
+
+  tokens.forEach((token) => {
+    if (token.startsWith("(")) {
+      // Inside parentheses: Begin a new OR group
+      insideParentheses = true;
+      tempGroup.push(token.slice(1));  // Remove the opening '('
+    } else if (token.endsWith(")")) {
+      // Inside parentheses: Close the current OR group
+      tempGroup.push(token.slice(0, -1));  // Remove the closing ')'
+      orConditions.push(...tempGroup.map(parseCondition));
+      insideParentheses = false;
+      tempGroup = [];
+    } else if (insideParentheses) {
+      // Inside parentheses: Add conditions to the temp group
+      tempGroup.push(token);
+    } else {
+      // Outside parentheses: Add to AND conditions
+      andConditions.push(parseCondition(token));
     }
   });
+
+  // Combine OR conditions (inside parentheses) and AND conditions (outside parentheses)
+  if (orConditions.length > 0) {
+    where.OR = orConditions;
+  }
+
+  if (andConditions.length > 0) {
+    where.AND = andConditions;
+  }
+  console.log(where);
   return where;
 }
+
 
 export function parseSort(sort?: string): object | undefined {
   if (!sort) return undefined;
@@ -98,4 +135,39 @@ function parseValue(value: string, operator: string): any {
     return value;
   }
   return inferType(value);
+}
+
+
+export function parseSelect(select?: string): object | undefined {
+  if (!select) return undefined;
+
+  const fields = select.split(",");
+  const selectObject: ILooseObject = {};
+
+  fields.forEach((field) => {
+    selectObject[field.trim()] = true;
+  });
+
+  return selectObject;
+}
+
+export function parseJoin(join?: string): object | undefined {
+  if (!join) return undefined;
+
+  const relations = join.split(",");
+  const includeObject: ILooseObject = {};
+
+  relations.forEach((relation) => {
+    const parts = relation.split(".");
+    let currentLevel = includeObject;
+
+    parts.forEach((part, index) => {
+      if (!currentLevel[part]) {
+        currentLevel[part] = index === parts.length - 1 ? true : {};
+      }
+      currentLevel = currentLevel[part] as ILooseObject;
+    });
+  });
+
+  return includeObject;
 }

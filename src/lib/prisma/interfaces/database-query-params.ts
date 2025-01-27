@@ -13,7 +13,6 @@ export interface IOptionsObject {
   ENDS_WITH?: string;
   IN?: string;
   BETWEEN?: string;
-  OR?: string;
   CONDITION_DELIMITER?: string;
   VALUE_DELIMITER?: string;
   DEFAULT_LIMIT?: string;
